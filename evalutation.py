@@ -5,7 +5,7 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 64 # how many independent sequences will we process in parallel?
 block_size = 256 # what is the maximum context length for predictions?
-max_iters = 6000
+max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
 mps_device = torch.device("mps")
@@ -164,6 +164,7 @@ class BigramLanguageModel(nn.Module):
         self.ln_f = nn.LayerNorm(n_embd) # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
         
+                
         self.apply(self._init_weights)
 
     def _init_weights(self, module):
@@ -178,7 +179,7 @@ class BigramLanguageModel(nn.Module):
         B, T = idx.shape
         # idx and targets are both (B,T) tensor of integers
         token_embd = self.token_embedding_table(idx) # (B,T,C) Batch, time, channel
-        pos_embd = self.positional_embedding_table(torch.arange(T, device=device)) # (T,C)
+        pos_embd = self.positional_embedding_table(torch.arange(T)) # (T,C)
         x = token_embd + pos_embd
         x = self.blocks(x)
         x = self.ln_f(x)
@@ -194,8 +195,6 @@ class BigramLanguageModel(nn.Module):
             loss = F.cross_entropy(logits, targets)
 
         return logits, loss
-    
-    
 
     def generate(self, idx, max_new_tokens):
         # idx is (B, T) array of indices in the current context
@@ -214,34 +213,16 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
+# Loading the model
 model = BigramLanguageModel()
-m = model.to(device)
+model.load_state_dict(torch.load("model.pt"))
+model.eval()
 
+# Generate text
+context = "Hitesh and Devyansh, "
+max_new_tokens = 10000
+context_encoded = torch.tensor(encode(context), dtype=torch.long).unsqueeze(0)
+generated_text = model.generate(context_encoded, max_new_tokens)
+decoded_text = decode(generated_text.squeeze().tolist())
 
-
-"""# Training the bigram model"""
-
-# create a PyTorch optimizer
-optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate) # lr = learning rate
-
-for iter in range(max_iters):
-
-    # every once in a while evaluate the loss on train and val sets
-    if iter % eval_interval == 0:
-        losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-
-    # sample a batch of data
-    xb, yb = get_batch('train')
-
-    # evaluate the loss
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
-
-# Save the model 
-torch.save(model.state_dict(), 'model.pt')
-# generate from the model
-context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+print(decoded_text)
